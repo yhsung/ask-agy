@@ -12,12 +12,12 @@
 omp
 ```
 
-OMP 的專案探索會載入 `.omp/extensions/agy-advisor.ts`。既有工作階段不會因新增檔案而自動取得工具，需重新啟動。未修改使用者全域設定。
+OMP 的專案探索會載入 `.omp/extensions/ask-agy.ts`。既有工作階段不會因新增檔案而自動取得工具，需重新啟動。未修改使用者全域設定。
 
 其他專案可明確載入此 extension；agy 的工作目錄會跟隨呼叫端的 `ctx.cwd`：
 
 ```sh
-omp -e /Volumes/Samsung970EVOPlus/dev-projects/agy-advisor/.omp/extensions/agy-advisor.ts
+omp -e /Volumes/Samsung970EVOPlus/dev-projects/ask-agy/.omp/extensions/ask-agy.ts
 ```
 
 提供兩個入口：
@@ -66,6 +66,6 @@ bun test
 
 ## 檔案
 
-- `.omp/extensions/agy-advisor.ts`：Slash command、工具註冊、輸入契約與使用時機。
+- `.omp/extensions/ask-agy.ts`：Slash command、工具註冊、輸入契約與使用時機。
 - `src/advisor.ts`：顧問提示、CLI 子程序管理與輸出解析。
 - `tests/advisor.test.ts`：輸出契約測試。
