@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# TypeScript compilation results
+*.js
+*.map
+
+# Environment variables
+.env*
+*.env.local
+*.env.*.local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Test coverage
+.nyc_output/
+coverage/
+
+# Debugging
+!.vscode/extensions.json
+
+# Lump scripts
+/lump
