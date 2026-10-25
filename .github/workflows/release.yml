@@ -114,3 +114,119 @@ jobs:
             done < <(git diff --name-only -z "$BEFORE_SHA" "$GITHUB_SHA")
             printf '</ul>\n'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: preflight
+    if: needs.preflight.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    concurrency:
+      group: ask-agy-release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+      BEFORE_SHA: ${{ github.event.before }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the exact candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create repository-scoped App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: yhsung
+          repositories: ask-agy
+          permission-administration: read
+
+      - name: Verify immutability and revalidate candidate
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if ! IMMUTABLE_ENABLED="$(GH_TOKEN="$APP_TOKEN" gh api \
+            "repos/$GITHUB_REPOSITORY/immutable-releases" --jq '.enabled')"; then
+            echo "Unable to verify immutable releases setting" >&2
+            exit 1
+          fi
+          if [[ "$IMMUTABLE_ENABLED" != "true" ]]; then
+            echo "Immutable releases are not enabled" >&2
+            exit 1
+          fi
+
+          gh auth setup-git
+          CANDIDATE_VERSION="$(git show "$GITHUB_SHA:package.json" | jq -er .version)"
+          BASE_VERSION="$(git show "$BEFORE_SHA:package.json" | jq -er .version)"
+          if [[ "$TAG" != "v$CANDIDATE_VERSION" ]]; then
+            echo "Candidate tag does not match package.json version" >&2
+            exit 1
+          fi
+
+          if ! TAG_REFS="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"; then
+            echo "Unable to query remote tags" >&2
+            exit 1
+          fi
+          if [[ -n "$TAG_REFS" ]]; then
+            echo "Release tag already exists: $TAG" >&2
+            exit 1
+          fi
+
+          if ! gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/releases.json"; then
+            echo "Unable to query existing releases" >&2
+            exit 1
+          fi
+          EXISTING_RELEASE="$(jq -s --arg tag "$TAG" \
+            "add | any(.[]; .tag_name == \$tag)" "$RUNNER_TEMP/releases.json")"
+          if [[ "$EXISTING_RELEASE" != "false" ]]; then
+            echo "A release already exists for tag $TAG" >&2
+            exit 1
+          fi
+
+          jq -sr \
+            'add | .[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/published-tags.txt"
+          bun scripts/release-version.ts \
+            "$BASE_VERSION" "$CANDIDATE_VERSION" "$RUNNER_TEMP/published-tags.txt" \
+            > /dev/null
+
+      - name: Create annotated tag and publish release
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+          gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+
+      - name: Verify published immutable release and commit
+        run: |
+          set -euo pipefail
+          if ! REMOTE_TAG="$(git ls-remote --tags origin "refs/tags/$TAG^{}")"; then
+            echo "Unable to verify remote peeled tag" >&2
+            exit 1
+          fi
+          REMOTE_COMMIT="${REMOTE_TAG%%$'\t'*}"
+          if [[ "$REMOTE_COMMIT" != "$GITHUB_SHA" ]]; then
+            echo "Published tag does not point to the candidate commit" >&2
+            exit 1
+          fi
+          if ! RELEASE_IS_IMMUTABLE="$(gh api \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            --jq '.draft == false and .immutable == true')"; then
+            echo "Unable to verify published release" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_IS_IMMUTABLE" != "true" ]]; then
+            echo "Published release is not immutable and published" >&2
+            exit 1
+          fi
