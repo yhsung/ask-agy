@@ -2,25 +2,21 @@
 
 讓 OMP 主代理按需呼叫 `ask-agy`，透過本機 `agy` CLI 向 `gemini-4-argon-high` 取得技術規劃的第二意見。不啟用 OMP 原生、每輪旁聽的 advisor，也不切換主模型。
 
-## 使用
+## 安裝與使用
 
-前置條件：`omp`、Bun 與已登入的 `agy` 可從 PATH 執行；`agy models` 包含 `gemini-4-argon-high`。本專案已在 OMP 18.12.1、Bun 1.3.13 驗證。
+先確認 `omp`、Bun 與已登入的 `agy` 可從 PATH 執行，且 `agy models` 包含 `gemini-4-argon-high`。本專案曾在 OMP 18.12.1、Bun 1.3.13 驗證。
 
-在本專案目錄啟動新的 OMP 工作階段：
-
-```sh
-omp
-```
-
-OMP 的專案探索會載入 `.omp/extensions/ask-agy.ts`。既有工作階段不會因新增檔案而自動取得工具，需重新啟動。未修改使用者全域設定。
-
-其他專案可明確載入此 extension；agy 的工作目錄會跟隨呼叫端的 `ctx.cwd`：
+使用 GitHub 安裝時，請將 `<release-tag>` 換成 repository 已發布的不可變版本標籤：
 
 ```sh
-omp -e /Volumes/Samsung970EVOPlus/dev-projects/ask-agy/.omp/extensions/ask-agy.ts
+omp install github:yhsung/ask-agy#<release-tag>
 ```
 
-提供兩個入口：
+例如發布 `v1.0.0` 後，可使用 `omp install github:yhsung/ask-agy#v1.0.0`。安裝或升級後，重新啟動 OMP 工作階段以載入 extension。
+
+本機開發可在 repository 根目錄執行 `omp plugin link .`，再啟動新的 OMP 工作階段；也可用 `omp --extension .` 單次載入。agy 的工作目錄會跟隨呼叫端的 `ctx.cwd`。
+
+此 extension 提供兩個入口：
 
 | 入口 | 使用方式 |
 | --- | --- |
@@ -69,12 +65,13 @@ Slash command 缺少問題或 `--model` 缺少模型名稱／問題時會顯示�
 ## 執行與限制
 
 - 預設透過 `agy --mode plan --model gemini-4-argon-high` 執行；可透過 slash command 的 `--model` 或工具的 `model` 欄位選擇支援模型表中的 ID。使用 JSON 輸出並停用 slash command／skill 展開。
-- 提示顧問不得呼叫工具、讀寫檔案、執行命令或委派工作。**這是 plan 模式加提示約束，不是作業系統強制的唯讀沙箱。** 不會使用跳過權限確認的旗標。
+- Extension 在 omp 同一個程序中執行，具有 omp 的檔案系統、網路與程序權限，並非沙箱化。
+- 提示顧問不得呼叫工具、讀寫檔案、執行命令或委派工作。這是 plan 模式加提示約束，不是作業系統強制的唯讀沙箱；不會使用跳過權限確認的旗標。
 - 不自動重試，也不自動改用其他模型。CLI 啟動／執行失敗、非成功狀態、無效 JSON 或空白回答都會回報錯誤。
 - agy 的 print timeout 為 120 秒；子程序另有 180 秒上限、4 MiB 輸出上限，並接收 OMP 的取消訊號。強制終止直接的 CLI 子程序，不保證回收 CLI 自行啟動的所有後代程序。
 - 成功結果的 `details` 保留模型 ID 與 agy conversation ID，方便追查。agy 可能自行保留對話記錄。
 - 啟動與結束事件會寫入 OMP debug log，包含 `agy` 命令、除 prompt 外的 CLI 參數、工具呼叫 ID、結束碼或錯誤碼與耗時。完整 prompt 不寫入 log；prompt 參數以字元數標示。預設 log 位置為 `~/.omp/logs/`。
-- 問題會傳給 agy 的上游服務。只提供必要且已移除敏感資訊的內容；此 extension 不實作祕密自動遮蔽。
+- 問題與 context 會傳給 agy 的上游服務。只提供必要且已移除敏感資訊的內容；此 extension 不實作祕密自動遮蔽。
 
 ## 驗證
 

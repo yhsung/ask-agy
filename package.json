@@ -1,7 +1,20 @@
 {
-"name": "ask-agy",
-  "private": true,
+  "name": "ask-agy",
+  "version": "1.0.0",
+  "description": "Ask an AGY model for a technical second opinion from omp",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yhsung/ask-agy.git"
+  },
+  "files": [
+    ".omp/extensions/ask-agy.ts",
+    "src/advisor.ts",
+    "README.md"
+  ],
+  "omp": {
+    "extensions": ["./.omp/extensions/ask-agy.ts"]
+  },
   "scripts": {
     "test": "bun test"
   },
