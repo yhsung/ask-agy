@@ -109,9 +109,10 @@ jobs:
         run: |
           set -euo pipefail
           CANDIDATE_VERSION="$(git show "$GITHUB_SHA:package.json" | jq -er .version)"
+          SAFE_CANDIDATE_VERSION="$(printf '%s' "$CANDIDATE_VERSION" | jq -Rr '@html')"
           {
             printf '## Release preflight: %s\n\n' "$TAG"
-            printf -- '- Candidate version: <code>%s</code>\n' "$CANDIDATE_VERSION"
+            printf -- '- Candidate version: <code>%s</code>\n' "$SAFE_CANDIDATE_VERSION"
             printf -- '- Candidate commit: <code>%s</code>\n' "$GITHUB_SHA"
             printf -- '- Previous stable release: <code>%s</code>\n' "${LATEST_PUBLISHED_VERSION:-none}"
             printf -- '- <code>bun test</code>: %s\n' "${TEST_RESULT:-not run}"
