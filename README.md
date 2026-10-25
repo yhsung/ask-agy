@@ -52,6 +52,7 @@ Slash command 未帶問題時只顯示用法，不啟動詢問。工具亦會提
 - 不自動重試，也不自動改用其他模型。CLI 啟動／執行失敗、非成功狀態、無效 JSON 或空白回答都會回報錯誤。
 - agy 的 print timeout 為 120 秒；子程序另有 180 秒上限、4 MiB 輸出上限，並接收 OMP 的取消訊號。強制終止直接的 CLI 子程序，不保證回收 CLI 自行啟動的所有後代程序。
 - 成功結果的 `details` 保留模型 ID 與 agy conversation ID，方便追查。agy 可能自行保留對話記錄。
+- 啟動與結束事件會寫入 OMP debug log，包含 `agy` 命令、除 prompt 外的 CLI 參數、工具呼叫 ID、結束碼或錯誤碼與耗時。完整 prompt 不寫入 log；prompt 參數以字元數標示。預設 log 位置為 `~/.omp/logs/`。
 - 問題會傳給 agy 的上游服務。只提供必要且已移除敏感資訊的內容；此 extension 不實作祕密自動遮蔽。
 
 ## 驗證
@@ -60,12 +61,10 @@ Slash command 未帶問題時只顯示用法，不啟動詢問。工具亦會提
 bun test
 ```
 
-契約測試涵蓋成功回答、失敗狀態帶部分回答、格式錯誤及空白回答。
-
-已在互動式 OMP 輸入 `/ask-agy <問題>`，確認主代理呼叫同名工具、取得 agy 顧問建議並完成回答。空白指令參數與轉送的工具名稱亦已檢查；既有 4 項契約測試通過。
+契約測試涵蓋回答解析、失敗狀態、CLI 參數稽核資料與 prompt 遮蔽。互動式 OMP 路徑曾另行驗證；目前自動化測試不會呼叫真實 agy CLI。
 
 ## 檔案
 
 - `.omp/extensions/ask-agy.ts`：Slash command、工具註冊、輸入契約與使用時機。
 - `src/advisor.ts`：顧問提示、CLI 子程序管理與輸出解析。
-- `tests/advisor.test.ts`：輸出契約測試。
+- `tests/advisor.test.ts`：輸出契約及 CLI log/redaction 測試。

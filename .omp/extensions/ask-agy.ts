@@ -33,9 +33,14 @@ export default function (pi: ExtensionAPI) {
       context: z.string().min(1).describe("目標、限制、相關原始證據、已嘗試方法與未知；請先移除敏感資料"),
       proposal: z.string().optional().describe("目前建議方案、替代方案及取捨；沒有時可省略"),
     }),
-    async execute(_id, params, signal, onUpdate, ctx) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       onUpdate?.({ content: [{ type: "text", text: `詢問 agy / ${ADVISOR_MODEL}…` }] });
-      const answer = await askAdvisor(params, { cwd: ctx.cwd, signal });
+      const answer = await askAdvisor(params, {
+        cwd: ctx.cwd,
+        signal,
+        logger: (message, details) =>
+          pi.logger.debug(`${message} ${JSON.stringify({ toolCallId, ...details })}`),
+      });
       return {
         content: [{ type: "text", text: answer.advice }],
         details: { model: ADVISOR_MODEL, conversationId: answer.conversationId },
