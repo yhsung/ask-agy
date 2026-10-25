@@ -24,12 +24,32 @@ omp -e /Volumes/Samsung970EVOPlus/dev-projects/ask-agy/.omp/extensions/ask-agy.t
 
 | 入口 | 使用方式 |
 | --- | --- |
-| `/ask-agy <問題>` | 使用者在互動式 OMP 輸入；主代理先整理證據，再呼叫顧問工具並核實回覆 |
+| `/ask-agy <問題>` | 使用預設顧問模型；主代理先整理證據，再呼叫顧問工具並核實回覆 |
+| `/ask-agy --model <model-name> <問題>` | 指定 agy 支援的模型，其餘流程相同 |
 | `ask-agy` | 模型可呼叫的工具；輸入欄位見下方契約 |
 
-例如輸入 `/ask-agy 目前資料庫遷移方案有哪些風險？`，或對主代理說：「先整理證據，再用 ask-agy 評估這個方案的主要風險。」
+例如 `/ask-agy 目前資料庫遷移方案有哪些風險？`，或 `/ask-agy --model gemini-4-argon-medium 評估這個方案的風險`。
 
-Slash command 未帶問題時只顯示用法，不啟動詢問。工具亦會提示主代理，在重要取捨、高風險決策、證據矛盾或反覆卡住時按需使用；沒有每輪自動觸發的 hook。
+若模型名稱錯誤，互動模式會顯示支援模型選擇器；選定後繼續。使用者取消時不呼叫 agy。無互動 UI 時回報完整清單。
+Slash command 缺少問題或 `--model` 缺少模型名稱／問題時會顯示用法，不啟動詢問。
+
+### 支援模型
+
+| ID | 顯示名稱 |
+| --- | --- |
+| `gemini-4-argon-medium` | Gemini 4 Argon (Medium) |
+| `gemini-4-argon-high` | Gemini 4 Argon (High) |
+| `gemini-4-argon-low` | Gemini 4 Argon (Low) |
+| `gemini-3.8-flash-high` | Gemini 3.8 Flash (High) |
+| `gemini-3.8-flash-medium` | Gemini 3.8 Flash (Medium) |
+| `gemini-3.8-flash-low` | Gemini 3.8 Flash (Low) |
+| `claude-opus-5-5-low` | Claude Opus 5.5 (Low) |
+| `claude-opus-5-5-medium` | Claude Opus 5.5 (Medium) |
+| `claude-opus-5-5-high` | Claude Opus 5.5 (High) |
+| `claude-sonnet-5-5-low` | Claude Sonnet 5.5 (Low) |
+| `claude-sonnet-5-5-medium` | Claude Sonnet 5.5 (Medium) |
+| `claude-sonnet-5-5-high` | Claude Sonnet 5.5 (High) |
+| `gpt-oss-120b-medium` | GPT-OSS 120B (Medium) |
 
 在目前驗證的 OMP 18.12.1 中，print 模式不會等待 slash command 所啟動的後續回覆。因此 `/ask-agy` 請在互動模式使用；print 模式請傳入一般文字，要求主代理呼叫 `ask-agy` 工具。
 
@@ -39,6 +59,7 @@ Slash command 未帶問題時只顯示用法，不啟動詢問。工具亦會提
 | --- | --- |
 | `question` | 必填；具體問題或需要做的決策 |
 | `context` | 必填；目標、限制、原始證據、已嘗試方法與未知 |
+| `model` | 選填；支援模型表中的 ID。未指定時使用 `gemini-4-argon-high`；無效時互動選擇或回報清單 |
 | `proposal` | 選填；目前方案、替代方案與取捨 |
 
 每次呼叫都建立獨立 agy 對話，不使用 `--continue` 或重用歷史。呼叫端不會自動附上主代理的完整對話或讀取專案檔案。agy 仍會載入它自己的環境與專案指引，並非隔離的空白環境。
@@ -47,7 +68,7 @@ Slash command 未帶問題時只顯示用法，不啟動詢問。工具亦會提
 
 ## 執行與限制
 
-- 固定透過 `agy --mode plan --model gemini-4-argon-high`，使用 JSON 輸出並停用 slash command／skill 展開。
+- 預設透過 `agy --mode plan --model gemini-4-argon-high` 執行；可透過 slash command 的 `--model` 或工具的 `model` 欄位選擇支援模型表中的 ID。使用 JSON 輸出並停用 slash command／skill 展開。
 - 提示顧問不得呼叫工具、讀寫檔案、執行命令或委派工作。**這是 plan 模式加提示約束，不是作業系統強制的唯讀沙箱。** 不會使用跳過權限確認的旗標。
 - 不自動重試，也不自動改用其他模型。CLI 啟動／執行失敗、非成功狀態、無效 JSON 或空白回答都會回報錯誤。
 - agy 的 print timeout 為 120 秒；子程序另有 180 秒上限、4 MiB 輸出上限，並接收 OMP 的取消訊號。強制終止直接的 CLI 子程序，不保證回收 CLI 自行啟動的所有後代程序。

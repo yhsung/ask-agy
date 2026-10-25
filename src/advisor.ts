@@ -3,6 +3,51 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 export const ADVISOR_MODEL = "gemini-4-argon-high";
+export const ADVISOR_MODELS = [
+  { id: "gemini-4-argon-medium", name: "Gemini 4 Argon (Medium)" },
+  { id: "gemini-4-argon-high", name: "Gemini 4 Argon (High)" },
+  { id: "gemini-4-argon-low", name: "Gemini 4 Argon (Low)" },
+  { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" },
+  { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)" },
+  { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)" },
+  { id: "claude-opus-5-5-low", name: "Claude Opus 5.5 (Low)" },
+  { id: "claude-opus-5-5-medium", name: "Claude Opus 5.5 (Medium)" },
+  { id: "claude-opus-5-5-high", name: "Claude Opus 5.5 (High)" },
+  { id: "claude-sonnet-5-5-low", name: "Claude Sonnet 5.5 (Low)" },
+  { id: "claude-sonnet-5-5-medium", name: "Claude Sonnet 5.5 (Medium)" },
+  { id: "claude-sonnet-5-5-high", name: "Claude Sonnet 5.5 (High)" },
+  { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
+] as const;
+
+export function isAdvisorModel(model: string): boolean {
+  return ADVISOR_MODELS.some((choice) => choice.id === model);
+}
+
+export function advisorModelList(): string {
+  return ADVISOR_MODELS.map(({ id, name }) => `- ${id} — ${name}`).join("\n");
+}
+
+export async function resolveAdvisorModel(
+  requested: string | undefined,
+  choose?: (models: typeof ADVISOR_MODELS) => Promise<string | undefined>,
+): Promise<{ model?: string; error?: string; cancelled?: boolean }> {
+  if (requested === undefined) return { model: ADVISOR_MODEL };
+  if (isAdvisorModel(requested)) return { model: requested };
+
+  const options = advisorModelList();
+  if (!choose) {
+    return { error: `不支援模型「${requested}」。可用模型：\n${options}` };
+  }
+  const selected = await choose(ADVISOR_MODELS);
+  if (!selected) {
+    return { error: `已取消模型選擇。可用模型：\n${options}`, cancelled: true };
+  }
+  if (!isAdvisorModel(selected)) {
+    return { error: `選取的模型不在支援清單中。可用模型：\n${options}` };
+  }
+  return { model: selected };
+}
+
 
 export interface AdvisorQuestion {
   question: string;
@@ -41,7 +86,7 @@ export function parseAdvisorResponse(stdout: string): AdvisorAnswer {
   };
 }
 
-export function createAdvisorInvocation(input: AdvisorQuestion): {
+export function createAdvisorInvocation(input: AdvisorQuestion, model = ADVISOR_MODEL): {
   command: string;
   args: string[];
   auditArgs: string[];
@@ -58,7 +103,7 @@ export function createAdvisorInvocation(input: AdvisorQuestion): {
   ].join("\n");
   const args = [
     "--mode", "plan",
-    "--model", ADVISOR_MODEL,
+    "--model", model,
     "--output-format", "json",
     "--print-timeout", "120s",
     "--disable-slash-commands",
@@ -94,13 +139,16 @@ export async function askAdvisor(
   input: AdvisorQuestion,
   options: {
     cwd: string;
+    model?: string;
     signal?: AbortSignal;
     logger?: AdvisorLogger;
     execute?: AdvisorExecutor;
   },
 ): Promise<AdvisorAnswer> {
   options.signal?.throwIfAborted();
-  const invocation = createAdvisorInvocation(input);
+  const resolution = await resolveAdvisorModel(options.model);
+  if (!resolution.model) throw new Error(resolution.error);
+  const invocation = createAdvisorInvocation(input, resolution.model);
   const startedAt = Date.now();
   auditLog(options.logger, "ask-agy: spawning CLI", {
     command: invocation.command,
