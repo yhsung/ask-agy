@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.detect.outputs.release }}
+      tag: ${{ steps.candidate.outputs.tag }}
+      latestPublishedVersion: ${{ steps.candidate.outputs.latestPublishedVersion }}
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Detect package version change
+        id: detect
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            echo "Missing valid push before SHA" >&2
+            exit 1
+          fi
+          BASE_VERSION="$(git show "$BEFORE_SHA:package.json" | jq -er .version)"
+          CANDIDATE_VERSION="$(git show "$GITHUB_SHA:package.json" | jq -er .version)"
+          if [[ "$BASE_VERSION" == "$CANDIDATE_VERSION" ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate stable release candidate
+        id: candidate
+        if: steps.detect.outputs.release == 'true'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BASE_VERSION="$(git show "$BEFORE_SHA:package.json" | jq -er .version)"
+          CANDIDATE_VERSION="$(git show "$GITHUB_SHA:package.json" | jq -er .version)"
+          TAG="v$CANDIDATE_VERSION"
+          if ! TAG_REFS="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"; then
+            echo "Unable to query remote tags" >&2
+            exit 1
+          fi
+          if [[ -n "$TAG_REFS" ]]; then
+            echo "Release tag already exists: $TAG" >&2
+            exit 1
+          fi
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            > "$RUNNER_TEMP/published-tags.txt"
+          bun scripts/release-version.ts \
+            "$BASE_VERSION" "$CANDIDATE_VERSION" "$RUNNER_TEMP/published-tags.txt" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Run test suite
+        id: test
+        if: steps.detect.outputs.release == 'true'
+        run: bun test
+
+      - name: Inspect package contents
+        id: package
+        if: steps.detect.outputs.release == 'true'
+        run: npm pack --dry-run
+
+      - name: Write release review summary
+        if: always() && steps.detect.outputs.release == 'true'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          TAG: ${{ steps.candidate.outputs.tag }}
+          LATEST_PUBLISHED_VERSION: ${{ steps.candidate.outputs.latestPublishedVersion }}
+          TEST_RESULT: ${{ steps.test.outcome }}
+          PACKAGE_RESULT: ${{ steps.package.outcome }}
+        run: |
+          set -euo pipefail
+          CANDIDATE_VERSION="$(git show "$GITHUB_SHA:package.json" | jq -er .version)"
+          {
+            printf '## Release preflight: %s\n\n' "$TAG"
+            printf -- '- Candidate version: <code>%s</code>\n' "$CANDIDATE_VERSION"
+            printf -- '- Candidate commit: <code>%s</code>\n' "$GITHUB_SHA"
+            printf -- '- Previous stable release: <code>%s</code>\n' "${LATEST_PUBLISHED_VERSION:-none}"
+            printf -- '- <code>bun test</code>: %s\n' "${TEST_RESULT:-not run}"
+            printf -- '- <code>npm pack --dry-run</code>: %s\n\n' "${PACKAGE_RESULT:-not run}"
+            printf '### Commits\n\n<ul>\n'
+            while IFS= read -r commit; do
+              printf '%s' "$commit" | jq -Rr '"<li><code>" + @html + "</code></li>"'
+            done < <(git log --format='%h %s' "$BEFORE_SHA..$GITHUB_SHA")
+            printf '</ul>\n\n### Changed paths\n\n<ul>\n'
+            while IFS= read -r -d '' path; do
+              printf '%s' "$path" | jq -Rsr '"<li><code>" + @html + "</code></li>"'
+            done < <(git diff --name-only -z "$BEFORE_SHA" "$GITHUB_SHA")
+            printf '</ul>\n'
+          } >> "$GITHUB_STEP_SUMMARY"
