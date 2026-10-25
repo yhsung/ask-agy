@@ -69,9 +69,21 @@ jobs:
             echo "Release tag already exists: $TAG" >&2
             exit 1
           fi
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
-            > "$RUNNER_TEMP/published-tags.txt"
+          if ! gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/releases.json"; then
+            echo "Unable to query existing releases" >&2
+            exit 1
+          fi
+          EXISTING_RELEASE="$(jq -s --arg tag "$TAG" \
+            "add | any(.[]; .tag_name == \$tag)" "$RUNNER_TEMP/releases.json")"
+          if [[ "$EXISTING_RELEASE" != "false" ]]; then
+            echo "A release already exists for tag $TAG" >&2
+            exit 1
+          fi
+          jq -sr \
+            'add | .[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/published-tags.txt"
           bun scripts/release-version.ts \
             "$BASE_VERSION" "$CANDIDATE_VERSION" "$RUNNER_TEMP/published-tags.txt" \
             >> "$GITHUB_OUTPUT"
