@@ -2,84 +2,47 @@
 
 ## Publishing ask-agy to GitHub
 
-Follow this procedure only when the user explicitly asks to publish an `ask-agy` release. A completed milestone or a release-ready state is not authorization to push or publish. This repository distributes the extension from GitHub tags; do not publish to npm or add an automated GitHub Actions release workflow.
+### Automated release lifecycle
 
-### 1. Confirm release authorization and prerequisites
+`package.json.version` is the sole release version source. Stable SemVer version changes merged to `main` trigger the GitHub release workflow; a push with no version change does not create a release. This publishes a GitHub source release for omp installation, not an npm package.
 
-- Confirm the target repository is `yhsung/ask-agy` and `origin` points to `https://github.com/yhsung/ask-agy.git`.
-- Run `gh auth status`. Stop if GitHub CLI is not authenticated for this repository.
-- The release commit, including the package version, must be on `main` and already present on `origin/main`; require a clean working tree before creating a tag. If release changes still need a commit or push, get the user's authorization before pushing them.
-- In GitHub repository **Settings → Releases**, confirm **Enable release immutability** is enabled. It only protects releases published after it is enabled. If it is disabled or cannot be verified, stop; do not publish a mutable release as a substitute.
-- Treat `package.json`'s `version` as the sole release version. Select a SemVer version greater than the latest published version: patch for compatible fixes, minor for backward-compatible features, major for breaking changes. Update `package.json` before running the release checks. The initial version `1.0.0` corresponds to tag `v1.0.0`.
+1. Make a stable SemVer version bump in a pull request targeting `main`. The new version must be greater than every published stable release. Do not merge a second version-bump PR while an earlier release is awaiting approval or publishing; resolve the first run before starting another.
+2. The PR CI runs `bun test` and `npm pack --dry-run`. Both checks must pass before merge.
+3. After merge, read-only preflight compares `package.json.version` at the push's before and candidate commits, rejects prereleases, malformed or non-increasing versions and existing tags/releases, reruns the checks at the candidate commit, and writes a review summary. Preflight does not create tags or releases and does not generate release notes.
+4. An authorized reviewer approves the protected `release` Environment only after reviewing the preflight summary. The publish job then verifies immutable releases are enabled, rechecks the candidate and unused tag/release, creates an annotated `v<version>` tag at the exact candidate commit, and publishes a non-draft, non-prerelease GitHub release with generated notes.
+5. The workflow verifies the release is published and immutable and that the remote peeled tag points to the candidate commit. Install with `omp install "github:yhsung/ask-agy#v<version>"`.
 
-### 2. Validate the release commit
+Do not publish to npm or upload release assets. Do not manually create a release tag to bypass a failed or waiting workflow. Never move, delete, or reuse a pushed release tag.
 
-At the clean release commit on `main`, run:
+### Required repository setup
+
+Repository owners must configure these settings separately; Actions does not change them:
+
+- Protect `main`: require pull requests and the CI check; prevent direct pushes.
+- Create Environment `release` with required reviewers and self-review prevention where supported.
+- Create/install a GitHub App only on `yhsung/ask-agy` with `Administration: read`. Store `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` as secrets in the protected `release` Environment, not repository-wide secrets. The workflow requests an App token restricted to this repository and that read permission.
+- Keep immutable releases enabled. If the setting is disabled or cannot be read, publication stops before tag creation.
+- Ensure the Actions policy allows the pinned actions and required `GITHUB_TOKEN` permissions.
+
+Only the reviewer-gated publish job receives `contents: write`; CI and preflight remain read-only. The App token cannot write repository contents or settings. Do not expose the App private key or token in pull-request jobs or logs.
+
+### Failure handling and optional local check
+
+If preflight fails before tag creation, correct the cause; rerun the same workflow run for a transient failure. If source or version changes are needed, resolve the failed run before preparing another version-bump PR. If a write may have succeeded, inspect the remote tag and release by tag; verify the immutable status and exact peeled commit before deciding whether the run completed. Never blindly retry a write or repair by moving/deleting a tag. If the candidate cannot be safely completed, choose a later version in `package.json`.
+
+The local model-backed smoke check is optional and outside Actions; it can incur provider usage:
 
 ```sh
-bun test
-npm pack --dry-run
 omp --extension . --no-session --no-tools --mode json --print "Reply with the single word ready."
 ```
 
-The omp smoke command loads the repository package root and sends a short prompt to the configured main model; it may incur provider usage. Do not invoke the `ask-agy` tool or make a real agy request during this check. If any check fails, stop and report the failure.
-
-Derive the tag from the package version and confirm it does not exist locally or remotely:
-
-```sh
-VERSION="$(node -p "require('./package.json').version")"
-TAG="v$VERSION"
-git tag --list "$TAG"
-git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}"
-```
-
-A failed remote lookup is not proof that the tag is absent. Stop if the tag exists in either location or the remote cannot be checked. Never move, delete, or reuse a tag name that has been pushed.
-
-### 3. Push the tag and create a draft release
-
-Record the verified release commit SHA. Create an annotated tag at that exact commit, push only that tag, then create a draft release:
-
-```sh
-COMMIT="$(git rev-parse HEAD)"
-git tag -a "$TAG" -m "$TAG" "$COMMIT"
-git push origin "$TAG"
-REMOTE_COMMIT="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | cut -f1)"
-if [ "$REMOTE_COMMIT" != "$COMMIT" ]; then
-  printf 'Remote tag does not resolve to release commit %s\n' "$COMMIT" >&2
-  exit 1
-fi
-gh release create "$TAG" --draft --verify-tag --generate-notes --title "$TAG"
-```
-
-`--verify-tag` makes GitHub CLI abort if the tag is not already on GitHub instead of silently creating a tag from the default branch. Do not attach assets; omp installs the repository source at the tag. If a command fails after the tag is pushed, inspect the draft and remote tag before retrying; the tag name remains reserved.
-
-### 4. Review, publish, and verify
-
-Before publishing, inspect `gh release view "$TAG"`. Confirm the draft uses the intended tag and commit, and review its generated notes. Show these details to the user and obtain explicit approval to publish the immutable release. Then run:
-
-```sh
-gh release edit "$TAG" --draft=false
-```
-
-After publishing:
-
-- Confirm `gh release view "$TAG"` reports a published release.
-- Confirm the GitHub release page shows the **Immutable** indicator.
-- Compare the remote peeled tag commit from `git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}"` with the verified release commit SHA.
-- Report the exact installation command:
-
-```sh
-omp install "github:yhsung/ask-agy#$TAG"
-```
-
-### 5. Corrections
-
-An immutable release tag cannot be moved or deleted while its release exists, and its name cannot be reused after deleting the release. Correct a published release by selecting the next appropriate SemVer version in `package.json` and publishing a new tag. Never force-push, move, delete, or reuse an already-published tag.
+Do not invoke the `ask-agy` tool or make a real agy request during this check.
 
 ### Official references
 
-- [omp extension authoring — installing from Git](https://omp.sh/docs/extension-authoring)
+- [GitHub Actions workflow syntax](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions)
+- [GitHub Actions environments and deployment protection rules](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment)
+- [Automatic token authentication](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication)
 - [GitHub immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
-- [Enable release immutability](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
+- [REST API: Check immutable releases setting](https://docs.github.com/en/rest/repos/repos#check-if-immutable-releases-are-enabled-for-a-repository)
 - [GitHub CLI `gh release create`](https://cli.github.com/manual/gh_release_create)
-- [GitHub CLI `gh release edit`](https://cli.github.com/manual/gh_release_edit)
