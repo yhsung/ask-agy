@@ -9,10 +9,10 @@
 使用 GitHub 安裝時，請將 `<release-tag>` 換成 repository 已發布的不可變版本標籤：
 
 ```sh
-omp install github:yhsung/ask-agy#<release-tag>
+omp install "github:yhsung/ask-agy#<release-tag>"
 ```
 
-例如發布 `v1.0.0` 後，可使用 `omp install github:yhsung/ask-agy#v1.0.0`。安裝或升級後，重新啟動 OMP 工作階段以載入 extension。
+例如發布 `v1.0.0` 後，可使用 `omp install "github:yhsung/ask-agy#v1.0.0"`。此指令會直接從 GitHub 安裝 extension，不必先 clone repository。安裝或升級後，重新啟動 OMP 工作階段以載入 extension。
 
 本機開發可在 repository 根目錄執行 `omp plugin link .`，再啟動新的 OMP 工作階段；也可用 `omp --extension .` 單次載入。agy 的工作目錄會跟隨呼叫端的 `ctx.cwd`。
 
