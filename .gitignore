@@ -28,3 +28,6 @@ coverage/
 
 # Lump scripts
 /lump
+
+# macOS metadata
+.DS_Store
